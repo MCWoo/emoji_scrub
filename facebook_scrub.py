@@ -10,21 +10,16 @@ import re
 import urllib3
 
 # Constants
-PIXELS = 16
+PIXELS = 64
 OUT_DIR = './emojis/{}/'.format(PIXELS)
 OUT_FILE = OUT_DIR + '{}_{}{:>03}.png'
 STATUS_OK = 200
 BASE_URL = 'https://static.xx.fbcdn.net/images/emoji.php/v9/z{}/1.5/' + str(PIXELS) + '/{}{:>03}.png'
 
 NUM_HEX_DIGITS = 16
-MAX_PREFIX_1 = NUM_HEX_DIGITS * NUM_HEX_DIGITS  # 2 hex digits
+MAX_PREFIX_1 = NUM_HEX_DIGITS #* NUM_HEX_DIGITS  # 2 hex digits
 MAX_PREFIX_2 = NUM_HEX_DIGITS * NUM_HEX_DIGITS * NUM_HEX_DIGITS  # 3 hex digits
 PREFIX_2S = ('1f', '2', '3')
-
-NUM_THREADS = multiprocessing.cpu_count() * 2
-
-THREAD_RANGE = int(MAX_PREFIX_2 / NUM_THREADS)
-EPSILON = round(THREAD_RANGE / 10.0)
 
 http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=certifi.where())
 
@@ -72,13 +67,27 @@ class SearchThread(Thread):
             self.pool.task_done()
 
 
-def run(i_start='0'):
+def run(i_start='0', thread_mult=1):
+    # 1 * cpu_count for 16 prefix_1s = 5.20 mins
+    # 1.5 * cpu_count for 16 prefix_1s = 3.52 mins
+    # 2 * cpu_count for 16 prefix_1s = 2.78 mins
+    # 2.5 * cpu_count for 16 prefix_1s = 4.08 mins
+
+    # 1 * cpu_count for 16 prefix_1s = mins
+    # 1.5 * cpu_count for 16 prefix_1s = mins
+    # 2 * cpu_count for 16 prefix_1s = 3.16 mins
+    # 2.5 * cpu_count for 16 prefix_1s = 2.75 mins
+    num_threads = int(multiprocessing.cpu_count() * thread_mult)
+
+    thread_range = int(MAX_PREFIX_2 / NUM_HEX_DIGITS)
+    epsilon = round(thread_range / 10.0)
+
     start = datetime.now()
     chunk_pool = queue.Queue()
     random.seed(start.microsecond)
 
     print('\n================================================================================')
-    print('Starting program with {} threads'.format(NUM_THREADS))
+    print('Starting program with {} threads'.format(num_threads))
     print('Start time: {}'.format(start.strftime('%Y/%m/%d, %H:%M:%S')))
     print('================================================================================\n')
 
@@ -88,7 +97,7 @@ def run(i_start='0'):
 
     # Fill out chunk pool of work
     for k in range(len(PREFIX_2S)):
-        if k == 0:
+        if k > 0:
             continue
         prefix_2 = PREFIX_2S[k]
 
@@ -100,7 +109,7 @@ def run(i_start='0'):
             while range_max < MAX_PREFIX_2:
                 # We use a random epsilon so that threads aren't trying to contend for the chunk_pool all at the
                 # same time
-                range_max = range_min + THREAD_RANGE + random.randint(-EPSILON, EPSILON)
+                range_max = range_min + thread_range + random.randint(-epsilon, epsilon)
                 range_max = min(range_max, MAX_PREFIX_2)
 
                 chunk_pool.put(
@@ -110,7 +119,7 @@ def run(i_start='0'):
 
     threads = []
     # Start worker threads
-    for i in range(NUM_THREADS):
+    for i in range(num_threads):
         t = SearchThread(pool=chunk_pool)
         t.start()
         threads.append(t)
