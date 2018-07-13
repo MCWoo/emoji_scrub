@@ -7,6 +7,8 @@ import os
 import queue
 import random
 import re
+import signal
+import sys
 import urllib3
 
 # Constants
@@ -17,19 +19,21 @@ STATUS_OK = 200
 BASE_URL = 'https://static.xx.fbcdn.net/images/emoji.php/v9/z{}/1.5/' + str(PIXELS) + '/{}{:>03}.png'
 
 NUM_HEX_DIGITS = 16
-MAX_PREFIX_1 = NUM_HEX_DIGITS #* NUM_HEX_DIGITS  # 2 hex digits
-MAX_PREFIX_2 = NUM_HEX_DIGITS * NUM_HEX_DIGITS * NUM_HEX_DIGITS  # 3 hex digits
-PREFIX_2S = ('1f', '2', '3')
+MAX_RANGE_1 = NUM_HEX_DIGITS * NUM_HEX_DIGITS  # 2 hex digits
+MAX_RANGE_2 = NUM_HEX_DIGITS * NUM_HEX_DIGITS * NUM_HEX_DIGITS  # 3 hex digits
+RANGE2_PREFIXES = ('1f', '2', '3')
 
-http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=certifi.where())
+http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=certifi.where(), num_pools=50)
+
+stop = False
 
 
 class SearchChunk:
-    def __init__(self, prefix_1, prefix_2, range_min, range_max):
-        self.prefix_1 = prefix_1
-        self.prefix_2 = prefix_2
-        self.range_min = range_min
-        self.range_max = range_max
+    def __init__(self, range1, prefix, range2_min, range2_max):
+        self.range1 = range1
+        self.prefix = prefix
+        self.range2_min = range2_min
+        self.range2_max = range2_max
 
 
 class SearchThread(Thread):
@@ -38,89 +42,100 @@ class SearchThread(Thread):
         self.pool = pool
 
     def run(self):
-        while not self.pool.empty():
-            try:
-                chunk = self.pool.get()
-            except queue.Empty:
-                print('No more chunks for thread. Exiting')
-                return
-
+        while not self.pool.empty() and not stop:
+            chunk = self.pool.get()
             if chunk is None:
-                print('No more chunks for thread. Exiting')
-                return
+                break
 
-            print('Starting new chunk ({}_{}, {:>03}-{:>03})'.format(chunk.prefix_1, chunk.prefix_2,
-                                                                     hex(chunk.range_min)[2:],
-                                                                     hex(chunk.range_max)[2:]))
+            print('Starting new chunk ({}) ({}_{}, {:>03}-{:>03})'.format(self.name, chunk.range1, chunk.prefix,
+                                                                          hex(chunk.range2_min)[2:],
+                                                                          hex(chunk.range2_max)[2:]))
 
             # Execute on the chunk
-            for i in range(chunk.range_min, chunk.range_max):
+            for i in range(chunk.range2_min, chunk.range2_max):
+                if stop:
+                    break
                 hex_i = hex(i)[2:]
-                url = BASE_URL.format(chunk.prefix_1, chunk.prefix_2, hex_i)
+                url = BASE_URL.format(chunk.range1, chunk.prefix, hex_i)
                 r = http.request('GET', url)
 
                 if r.status == STATUS_OK:
-                    print('\temoji found! {}_{}{}'.format(chunk.prefix_1, chunk.prefix_2, hex_i))
-                    with open(OUT_FILE.format(chunk.prefix_1, chunk.prefix_2, hex_i), 'wb') as f:
+                    print('\temoji found! {}_{}{}'.format(chunk.range1, chunk.prefix, hex_i))
+                    with open(OUT_FILE.format(chunk.range1, chunk.prefix, hex_i), 'wb') as f:
                         f.write(r.data)
 
             self.pool.task_done()
 
+        print('({}) Finished executing chunks'.format(self.name))
+
 
 def run(i_start='0', thread_mult=1):
-    # 1 * cpu_count for 16 prefix_1s = 5.20 mins
-    # 1.5 * cpu_count for 16 prefix_1s = 3.52 mins
-    # 2 * cpu_count for 16 prefix_1s = 2.78 mins
-    # 2.5 * cpu_count for 16 prefix_1s = 4.08 mins
+    # 1 * cpu_count for 16 range1 = 5.20 mins
+    # 1.5 * cpu_count for 16 range1 = 3.52 mins
+    # 2 * cpu_count for 16 range1 = 2.78 mins
+    # 2.5 * cpu_count for 16 range1 = 4.08 mins
 
-    # 1 * cpu_count for 16 prefix_1s = mins
-    # 1.5 * cpu_count for 16 prefix_1s = mins
-    # 2 * cpu_count for 16 prefix_1s = 3.16 mins
-    # 2.5 * cpu_count for 16 prefix_1s = 2.75 mins
+    # 1 * cpu_count for 16 range1 = mins
+    # 1.5 * cpu_count for 16 range1 = mins
+    # 2 * cpu_count for 16 range1 = 3.16 mins
+    # 2.5 * cpu_count for 16 range1 = 2.75 mins
     num_threads = int(multiprocessing.cpu_count() * thread_mult)
 
-    thread_range = int(MAX_PREFIX_2 / NUM_HEX_DIGITS)
+    thread_range = int(MAX_RANGE_2 / NUM_HEX_DIGITS)
     epsilon = round(thread_range / 10.0)
 
     start = datetime.now()
     chunk_pool = queue.Queue()
     random.seed(start.microsecond)
+    threads = []
 
     print('\n================================================================================')
     print('Starting program with {} threads'.format(num_threads))
     print('Start time: {}'.format(start.strftime('%Y/%m/%d, %H:%M:%S')))
     print('================================================================================\n')
 
+    # Print out what we stopped at if we ctrl-c
+    def sigint(sig, frame):
+        global stop
+        stop = True
+        print('\nProgram interrupted! Stopping...\n')
+        for thread in threads:
+            thread.join()
+        print_end_time(start)
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, sigint)
+
     # Make the out directory, if it doesn't exist
     if not os.path.exists(OUT_DIR):
         os.makedirs(OUT_DIR)
 
     # Fill out chunk pool of work
-    for k in range(len(PREFIX_2S)):
-        if k > 0:
-            continue
-        prefix_2 = PREFIX_2S[k]
+    for range2_i in range(len(RANGE2_PREFIXES)):
+        # if range2_i > 0:
+        #     continue
+        prefix = RANGE2_PREFIXES[range2_i]
 
-        for i in range(int(i_start, 0), MAX_PREFIX_1):
-            hex_i = hex(i)[2:]
+        for range1_i in range(int(i_start, 0), MAX_RANGE_1):
+            range1_hex = hex(range1_i)[2:]
 
-            range_min = 0
-            range_max = 0
-            while range_max < MAX_PREFIX_2:
+            range2_min = 0
+            range2_max = 0
+            while range2_max < MAX_RANGE_2:
                 # We use a random epsilon so that threads aren't trying to contend for the chunk_pool all at the
                 # same time
-                range_max = range_min + thread_range + random.randint(-epsilon, epsilon)
-                range_max = min(range_max, MAX_PREFIX_2)
+                range2_max = range2_min + thread_range + random.randint(-epsilon, epsilon)
+                range2_max = min(range2_max, MAX_RANGE_2)
 
                 chunk_pool.put(
-                    SearchChunk(prefix_1=hex_i, prefix_2=prefix_2, range_min=range_min, range_max=range_max))
+                    SearchChunk(range1=range1_hex, prefix=prefix, range2_min=range2_min, range2_max=range2_max))
 
-                range_min = range_max
+                range2_min = range2_max
 
-    threads = []
     # Start worker threads
-    for i in range(num_threads):
+    for thread_i in range(num_threads):
         t = SearchThread(pool=chunk_pool)
+        t.name = "SearchThread {}".format(thread_i)
         t.start()
         threads.append(t)
 
@@ -129,9 +144,12 @@ def run(i_start='0', thread_mult=1):
     for thread in threads:
         thread.join()
 
+    print_end_time(start)
+
+
+def print_end_time(start):
     end = datetime.now()
     delta = end - start
-
     print('\n================================================================================')
     print('End time: {}'.format(end.strftime('%Y/%m/%d, %H:%M:%S')))
     print('Run time: {:.2f} minutes'.format(delta.total_seconds() / 60.0))
