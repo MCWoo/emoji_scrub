@@ -12,7 +12,7 @@ import sys
 import urllib3
 
 # Constants
-PIXELS = 64
+PIXELS = 32
 OUT_DIR = './emojis/{}/'.format(PIXELS)
 OUT_FILE = OUT_DIR + '{}_{}{:>03}.png'
 STATUS_OK = 200
@@ -23,7 +23,7 @@ MAX_RANGE_1 = NUM_HEX_DIGITS * NUM_HEX_DIGITS  # 2 hex digits
 MAX_RANGE_2 = NUM_HEX_DIGITS * NUM_HEX_DIGITS * NUM_HEX_DIGITS  # 3 hex digits
 RANGE2_PREFIXES = ('1f', '2', '3')
 
-http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=certifi.where(), num_pools=50)
+http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=certifi.where())
 
 stop = False
 
@@ -40,17 +40,21 @@ class SearchThread(Thread):
     def __init__(self, pool=None):
         Thread.__init__(self)
         self.pool = pool
+        self.last_range1 = '0'
 
     def run(self):
         while not self.pool.empty() and not stop:
-            chunk = self.pool.get()
+            try:
+                chunk = self.pool.get()
+            except queue.Empty:
+                break
             if chunk is None:
                 break
 
             print('Starting new chunk ({}) ({}_{}, {:>03}-{:>03})'.format(self.name, chunk.range1, chunk.prefix,
                                                                           hex(chunk.range2_min)[2:],
                                                                           hex(chunk.range2_max)[2:]))
-
+            self.last_range1 = chunk.range1
             # Execute on the chunk
             for i in range(chunk.range2_min, chunk.range2_max):
                 if stop:
@@ -63,18 +67,22 @@ class SearchThread(Thread):
                     print('\temoji found! {}_{}{}'.format(chunk.range1, chunk.prefix, hex_i))
                     with open(OUT_FILE.format(chunk.range1, chunk.prefix, hex_i), 'wb') as f:
                         f.write(r.data)
+                r.close()
 
             self.pool.task_done()
 
-        print('({}) Finished executing chunks'.format(self.name))
+        last_range1 = '(last range1: {})'.format(self.last_range1) if stop else ''
+        print('({}) Finished executing chunks {}'.format(self.name, last_range1))
 
 
-def run(i_start='0', thread_mult=1):
+def run(prefix_start=1, range1_start='0', thread_mult=1):
+    # Chunk size = MAX_RANGE_2 / # threads
     # 1 * cpu_count for 16 range1 = 5.20 mins
     # 1.5 * cpu_count for 16 range1 = 3.52 mins
     # 2 * cpu_count for 16 range1 = 2.78 mins
     # 2.5 * cpu_count for 16 range1 = 4.08 mins
 
+    # Fixed chunk size
     # 1 * cpu_count for 16 range1 = mins
     # 1.5 * cpu_count for 16 range1 = mins
     # 2 * cpu_count for 16 range1 = 3.16 mins
@@ -111,12 +119,12 @@ def run(i_start='0', thread_mult=1):
         os.makedirs(OUT_DIR)
 
     # Fill out chunk pool of work
-    for range2_i in range(len(RANGE2_PREFIXES)):
+    for prefix_i in range(prefix_start, len(RANGE2_PREFIXES)):
         # if range2_i > 0:
         #     continue
-        prefix = RANGE2_PREFIXES[range2_i]
+        prefix = RANGE2_PREFIXES[prefix_i]
 
-        for range1_i in range(int(i_start, 0), MAX_RANGE_1):
+        for range1_i in range(int(range1_start, 0), MAX_RANGE_1):
             range1_hex = hex(range1_i)[2:]
 
             range2_min = 0
@@ -131,6 +139,7 @@ def run(i_start='0', thread_mult=1):
                     SearchChunk(range1=range1_hex, prefix=prefix, range2_min=range2_min, range2_max=range2_max))
 
                 range2_min = range2_max
+        range1_start = '0'
 
     # Start worker threads
     for thread_i in range(num_threads):
@@ -139,10 +148,12 @@ def run(i_start='0', thread_mult=1):
         t.start()
         threads.append(t)
 
-    # Wait until Queue is empty and all threads finish
-    chunk_pool.join()
+    # Wait until all threads finish
     for thread in threads:
         thread.join()
+
+    if not chunk_pool.empty():
+        print('\n!! Program finished with chunks left! !!')
 
     print_end_time(start)
 
