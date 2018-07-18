@@ -26,9 +26,11 @@ RANGE2_PREFIXES = ['1f', '2', '3']
 
 http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=certifi.where())
 
+# global bool to tell threads to stop on SIGINT
 stop = False
 
 
+# POD in a queue for SearchThreads to obtain
 class SearchChunk:
     def __init__(self, range1, prefix, range2_min, range2_max):
         self.range1 = range1
@@ -37,6 +39,7 @@ class SearchChunk:
         self.range2_max = range2_max
 
 
+# Worker thread to search for emoji URLs
 class SearchThread(Thread):
     def __init__(self, pool=None):
         Thread.__init__(self)
@@ -90,7 +93,9 @@ def run(prefix_start=0, range1_start='0', thread_mult=2):
     # 2.5 * cpu_count for 16 range1 = 2.75 mins
     num_threads = int(multiprocessing.cpu_count() * thread_mult)
 
+    # How many URLs a thread will search
     thread_range = int(MAX_RANGE_2 / num_threads)
+    # Amount that the thread_range can vary +-
     epsilon = round(thread_range / 10.0)
 
     start = datetime.now()
@@ -166,6 +171,7 @@ def print_end_time(start):
     print('================================================================================')
 
 
+# Uses regex to search the html file for emoji URLs. Afterward, prints them out in the format for the user_script.js dictionary
 def emoji_scrub(filename='./raw_emoji_html.txt'):
     url_regex = re.compile('https://static.xx.fbcdn.net/images/emoji.php/.*?.png')
     with open(filename, 'r') as read_file:
