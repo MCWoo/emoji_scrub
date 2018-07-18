@@ -13,8 +13,8 @@
 (function() {
     'use strict';
 
-    // Regex that matches the old emoji schema
-    var old_regex = /https:\/\/static.xx.fbcdn.net\/images\/emoji.php\/v9\/f([\da-f]+)\/([\d\.]+)\/(\d+)\/([\da-f_]+).png/
+    // Regex that matches the new emoji schema
+    var new_regex = /https:\/\/static.xx.fbcdn.net\/images\/emoji.php\/v9\/f([\da-f]+)\/([\d\.]+)\/(\d+)\/([\da-f_]+).png/
 
     // Translate to an intermediate representation in case we need to add more mappings for different pixel sizes
     var code_to_int = {
@@ -33,7 +33,7 @@
                 for (var i = 0; i < emojis.length; i++)
                 {
                     var element = emojis[i];
-                    var match = old_regex.exec(element.src);
+                    var match = new_regex.exec(element.src);
                     if (match)
                     {
                         var r2 = match[4]
