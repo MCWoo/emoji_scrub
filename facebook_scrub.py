@@ -172,11 +172,11 @@ def print_end_time(start):
 
 
 # Uses regex to search the html file for emoji URLs. Afterward, prints them out in the format for the user_script.js dictionary
-def emoji_scrub(filename='./raw_emoji_html.txt'):
+def emoji_scrub(filename='./raw_emoji_html.txt', outfile='./emoji_urls.txt'):
     url_regex = re.compile('https://static.xx.fbcdn.net/images/emoji.php/.*?.png')
     with open(filename, 'r') as read_file:
         urls = url_regex.findall(read_file.read())
-        with open('./emoji_urls.txt', 'w') as write_file:
+        with open(outfile, 'w') as write_file:
             regex = re.compile('https://static.xx.fbcdn.net/images/emoji.php/v9/f([\da-f]+)/(1|1.5|2)/(\d+)/(.*?)\.png')
             i = 0
             for url in urls:
