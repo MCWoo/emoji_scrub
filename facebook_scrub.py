@@ -172,8 +172,15 @@ def emoji_scrub(filename='./raw_emoji_html.txt'):
     with open(filename, 'r') as read_file:
         urls = url_regex.findall(read_file.read())
         with open('./emoji_urls.txt', 'w') as write_file:
-            for url in sorted(urls):
-                write_file.write('{}\n'.format(url))
+            regex = re.compile('https://static.xx.fbcdn.net/images/emoji.php/v9/f([\da-f]+)/(1|1.5)/(\d+)/(.*?)\.png')
+            i = 0
+            for url in urls:
+                match = regex.match(url)
+                if match is None:
+                    print('No match! {}'.format(url))
+                    continue
+                write_file.write('\'{}_{}\': {},\n'.format(match.group(1), match.group(4), i))
+                i += 1
 
 
 if __name__ == '__main__':
