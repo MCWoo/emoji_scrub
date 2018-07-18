@@ -12,16 +12,17 @@ import sys
 import urllib3
 
 # Constants
-PIXELS = 32
-OUT_DIR = './emojis/{}/'.format(PIXELS)
+PIXELS = 64
+VERSION = 1
+OUT_DIR = './emojis/{}/{}/'.format(PIXELS, VERSION)
 OUT_FILE = OUT_DIR + '{}_{}{:>03}.png'
 STATUS_OK = 200
-BASE_URL = 'https://static.xx.fbcdn.net/images/emoji.php/v9/z{}/1.5/' + str(PIXELS) + '/{}{:>03}.png'
+BASE_URL = 'https://static.xx.fbcdn.net/images/emoji.php/v9/z{}/' + str(VERSION) + '/' + str(PIXELS) + '/{}{:>03}.png'
 
 NUM_HEX_DIGITS = 16
 MAX_RANGE_1 = NUM_HEX_DIGITS * NUM_HEX_DIGITS  # 2 hex digits
 MAX_RANGE_2 = NUM_HEX_DIGITS * NUM_HEX_DIGITS * NUM_HEX_DIGITS  # 3 hex digits
-RANGE2_PREFIXES = ('1f', '2', '3')
+RANGE2_PREFIXES = ['1f', '2', '3']
 
 http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=certifi.where())
 
@@ -75,7 +76,7 @@ class SearchThread(Thread):
         print('({}) Finished executing chunks {}'.format(self.name, last_range1))
 
 
-def run(prefix_start=1, range1_start='0', thread_mult=1):
+def run(prefix_start=0, range1_start='0', thread_mult=2):
     # Chunk size = MAX_RANGE_2 / # threads
     # 1 * cpu_count for 16 range1 = 5.20 mins
     # 1.5 * cpu_count for 16 range1 = 3.52 mins
@@ -89,7 +90,7 @@ def run(prefix_start=1, range1_start='0', thread_mult=1):
     # 2.5 * cpu_count for 16 range1 = 2.75 mins
     num_threads = int(multiprocessing.cpu_count() * thread_mult)
 
-    thread_range = int(MAX_RANGE_2 / NUM_HEX_DIGITS)
+    thread_range = int(MAX_RANGE_2 / num_threads)
     epsilon = round(thread_range / 10.0)
 
     start = datetime.now()
@@ -120,8 +121,6 @@ def run(prefix_start=1, range1_start='0', thread_mult=1):
 
     # Fill out chunk pool of work
     for prefix_i in range(prefix_start, len(RANGE2_PREFIXES)):
-        # if range2_i > 0:
-        #     continue
         prefix = RANGE2_PREFIXES[prefix_i]
 
         for range1_i in range(int(range1_start, 0), MAX_RANGE_1):
