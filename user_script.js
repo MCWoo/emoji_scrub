@@ -7,6 +7,7 @@
 // @match        https://tampermonkey.net/documentation.php
 // @grant        none
 // @include      https://www.messenger.com/*
+// @include      https://www.facebook.com/*
 // ==/UserScript==
 
 (function() {
