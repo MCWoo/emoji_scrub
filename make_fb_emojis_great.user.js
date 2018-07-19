@@ -14,6 +14,10 @@
     'use strict';
 
     // Regex that matches the new emoji schema
+    // match[1]: the first 1-2 hex digits identifying the emoji
+    // match[2]: "version", so far seen 1, 1.5, and 2
+    // match[3]: pixel, 16, 32, 64, or 128
+    // match[4]: the second 4-5 hex digits identifying the emoji. This correlates roughly across new/old emoji, and pixel sizes
     var new_regex = /https:\/\/static.xx.fbcdn.net\/images\/emoji.php\/v9\/f([\da-f]+)\/([\d\.]+)\/(\d+)\/([\da-f_]+).png/
 
     // Translate to an intermediate representation in case we need to add more mappings for different pixel sizes
@@ -24,6 +28,24 @@
         0: '2f', 1: '20', 2: 'b0', 3: '31', 4: 'b2', 5: '33', 6: 'b4', 7: '35', 8: 'b6', 9: 'b8', 10: 'e0', 11: 'ad', 12: '7a', 13: '61', 14: 'e2', 15: '63', 16: 'd6', 17: '55', 18: '57', 19: '7f', 20: '81', 21: '2', 22: '0', 23: 'e4', 24: '65', 25: '12', 26: 'ce', 27: '4f', 28: 'd0', 29: '8f', 30: '83', 31: '4', 32: '6d', 33: 'ee', 34: 'd2', 35: '53', 36: 'f0', 37: 'd4', 38: '9f', 39: 'f6', 40: '71', 41: '22', 42: '8d', 43: '75', 44: 'c', 45: 'a3', 46: '73', 47: 'f4', 48: 'f2', 49: '6f', 50: '1e', 51: '51', 52: 'a1', 53: '91', 54: 'e', 55: '93', 56: '10', 57: '20', 58: 'a5', 59: '37', 60: '3c', 61: '8f', 62: 'b7', 63: 'a5', 64: '38', 65: '3a', 66: 'bd', 67: '14', 68: '95', 69: '3e', 70: 'bf', 71: '40', 72: 'ab', 73: '42', 74: 'c1',
     };
 
+    // Translate from the new emoji link to the old emoji link. Currently doesn't take pixel size into account
+    function get_link(new_link) {
+        var match = new_regex.exec(new_link);
+        if (match)
+        {
+            var code = match[4];
+            if (code in code_to_int)
+            {
+                var intermediate = code_to_int[code];
+                if (intermediate in int_to_old)
+                {
+                    return 'https://static.xx.fbcdn.net/images/emoji.php/v9/z' + int_to_old[intermediate] + '/1.5/128/' + code + '.png'
+                }
+            }
+        }
+        return null;
+    }
+
     // Check each node that was added
     var observer = new MutationObserver(function(records, observer) {
         records.forEach(function(record){
@@ -33,22 +55,22 @@
                 for (var i = 0; i < emojis.length; i++)
                 {
                     var element = emojis[i];
-                    var match = new_regex.exec(element.src);
-                    if (match)
+                    var link = get_link(element.src)
+                    if (link)
                     {
-                        var r2 = match[4]
-                        if (r2 in code_to_int)
-                        {
-                            var intermediate = code_to_int[r2];
-                            if (intermediate in int_to_old)
-                            {
-                                var r1 = int_to_old[intermediate];
+                        element.src = link;
+                    }
+                }
 
-                                // translate to old emoji link
-                                var link = 'https://static.xx.fbcdn.net/images/emoji.php/v9/z' + r1 + '/1.5/128/' + r2 + '.png'
-                                element.src = link;
-                            }
-                        }
+                // Emojis still being typed are background images
+                var inChatEmojis = document.body.getElementsByClassName("_21wj");
+                for (i = 0; i < inChatEmojis.length; i++)
+                {
+                    element = inChatEmojis[i];
+                    link = get_link(element.style.backgroundImage);
+                    if (link)
+                    {
+                        element.style.backgroundImage = 'url("' + link + '")';
                     }
                 }
             });
