@@ -14,7 +14,7 @@ import urllib3
 # Constants
 PIXELS = 64
 VERSION = 1
-OUT_DIR = './emojis/{}/{}/'.format(PIXELS, VERSION)
+OUT_DIR = '../emojis/{}/{}/'.format(PIXELS, VERSION)
 OUT_FILE = OUT_DIR + '{}_{}{:>03}.png'
 STATUS_OK = 200
 BASE_URL = 'https://static.xx.fbcdn.net/images/emoji.php/v9/z{}/' + str(VERSION) + '/' + str(PIXELS) + '/{}{:>03}.png'
@@ -172,7 +172,7 @@ def print_end_time(start):
 
 
 # Uses regex to search the html file for emoji URLs. Afterward, prints them out in the format for the user_script.js dictionary
-def emoji_scrub(filename='./raw_emoji_html.txt', outfile='./emoji_urls.txt'):
+def emoji_scrub(filename='../data/raw_emoji_html.txt', outfile='../data/emoji_urls.txt'):
     url_regex = re.compile('https://static.xx.fbcdn.net/images/emoji.php/.*?.png')
     with open(filename, 'r') as read_file:
         urls = url_regex.findall(read_file.read())
@@ -186,6 +186,35 @@ def emoji_scrub(filename='./raw_emoji_html.txt', outfile='./emoji_urls.txt'):
                     continue
                 write_file.write('\'{}_{}\': {},\n'.format(match.group(1), match.group(4), i))
                 i += 1
+
+
+def create_emoji_map(new_emoji_map='../data/emoji_urls.txt', old_emoji_map='../data/old_emoji_urls.txt'):
+    int_map = {}
+    old_map = {}  # intermediate representation to old range1
+    emojis_dir = '../emojis/'
+    with open(new_emoji_map, 'r') as read_file:
+        map_regex = re.compile('\'.*?_(.*?)\': (\d+)')
+        matches = map_regex.findall(read_file.read())
+        for match in matches:
+            if int(match[1]) < 75:
+                int_map[match[0]] = int(match[1])
+
+    filename_regex = re.compile('(.+?)_(.+?)\.png')
+    for pixels in os.listdir(emojis_dir):
+        old_map[int(pixels)] = {}
+        curr_map = old_map[int(pixels)]
+        for filename in os.listdir(emojis_dir + pixels):
+            match = filename_regex.match(filename)
+            if match:
+                if match.group(2) in int_map:
+                    curr_map[int_map[match.group(2)]] = match.group(1)
+
+    with open(old_emoji_map, 'w') as out:
+        for pixels, curr_map in sorted(old_map.items()):
+            out.write('{}: {{\n'.format(pixels))
+            for intermediate, r1 in sorted(curr_map.items()):
+                out.write('\t{}: \'{}\',\n'.format(intermediate, r1))
+            out.write('},\n')
 
 
 if __name__ == '__main__':
